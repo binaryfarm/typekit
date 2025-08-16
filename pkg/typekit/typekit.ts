@@ -1,5 +1,1 @@
-
-export const TypeKit = {
-
-}
-console.log("Hello from TypeKit!");
+console.log("Hello from typescript");

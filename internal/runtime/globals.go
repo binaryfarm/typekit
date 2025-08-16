@@ -1,11 +1,11 @@
 package runtime
 
 import (
-	"github.com/binaryfarm/typekit/internal/common"
-	"github.com/grafana/sobek"
+	"github.com/binaryfarm/typekit/internal/engine"
+	"github.com/binaryfarm/typekit/internal/stdlib"
 )
 
-func set_globals(vm *sobek.Runtime) {
+func setGlobals(vm *engine.Runtime) {
 	global := vm.GlobalObject()
-	global.Set("console", common.Console{})
+	global.Set("console", stdlib.Console{})
 }

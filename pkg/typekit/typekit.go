@@ -1,10 +1,11 @@
 package typekit
 
 import (
+	_ "embed"
 	"path"
 
-	"github.com/binaryfarm/typekit/internal/common"
 	"github.com/binaryfarm/typekit/internal/compiler"
+	"github.com/binaryfarm/typekit/internal/repl"
 	"github.com/binaryfarm/typekit/internal/runtime"
 )
 
@@ -22,18 +23,17 @@ func handleError(err error) {
 		panic(err)
 	}
 }
-func setGlobals(runtime *runtime.Runtime) {
-	vm := runtime.VM()
-	global := vm.NewObject()
-	global.Set("console", common.Console{})
-}
+
 func NewApp(options Options) *App {
 	runtime := runtime.NewRuntime()
-	setGlobals(runtime)
 	return &App{
 		options: options,
 		runtime: runtime,
 	}
+}
+
+func NewREPL() *repl.REPL {
+	return repl.NewREPL()
 }
 
 func (a *App) Run() error {

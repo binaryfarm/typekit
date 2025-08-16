@@ -4,10 +4,12 @@ ifeq ($OS, Windows NT)
 endif
 .PHONY: all build clean install package test
 
-all: build test
+all: clean build test
 
 build:
-	@go build ${FLAGS} -o ./bin/ ./cmd/...
+	@echo "Building..."
+	@go generate -v ./...
+	@go build -v ${FLAGS} -o ./bin/ ./cmd/...
 
 clean:
 	@rm -rf ./bin

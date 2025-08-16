@@ -1,34 +1,37 @@
 package runtime
 
 import (
+	"github.com/binaryfarm/typekit/internal/engine"
 	"github.com/binaryfarm/typekit/internal/modules"
-	api "github.com/grafana/sobek"
 )
 
 type Runtime struct {
-	vm      *api.Runtime
-	modules *modules.TypeKitComboResolver
+	vm      *engine.Runtime
+	modules *modules.TypeKitResolver
 }
 
 func NewRuntime() *Runtime {
 
-	vm := api.New()
-	resolver := modules.NewTypeKitComboResolver(vm)
+	vm := engine.New()
+	resolver := modules.NewTypeKitResolver(vm)
 
-	vm.SetFieldNameMapper(api.TagFieldNameMapper("json", true))
-	set_globals(vm)
+	vm.SetFieldNameMapper(engine.TagFieldNameMapper("json", true))
+	setGlobals(vm)
 	return &Runtime{
 		vm:      vm,
 		modules: resolver,
 	}
 }
 
-func (r *Runtime) VM() *api.Runtime {
+func (r *Runtime) VM() *engine.Runtime {
 	return r.vm
 }
+func (r *Runtime) Repl(src string) (engine.Value, error) {
+	return r.vm.RunString(src)
+}
 
-func (r *Runtime) Eval(src string) (api.Value, error) {
-	record, e := api.ParseModule("app", src, r.modules.Resolve)
+func (r *Runtime) Eval(src string) (engine.Value, error) {
+	record, e := engine.ParseModule("app", src, r.modules.Resolve)
 	if e != nil {
 		return nil, e
 	}
@@ -36,12 +39,8 @@ func (r *Runtime) Eval(src string) (api.Value, error) {
 	if e != nil {
 		return nil, e
 	}
-	e = record.InitializeEnvironment()
-	if e != nil {
-		return nil, e
-	}
 	promise := record.Evaluate(r.vm)
-	if promise.State() != api.PromiseStateFulfilled {
+	if promise.State() != engine.PromiseStateFulfilled {
 		err := promise.Result().Export().(error)
 		return nil, err
 	}
