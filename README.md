@@ -1,6 +1,6 @@
 # TypeKit #
 
-![image]({https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white}) | ![image]({https://img.shields.io/badge/Apache--2.0-green?style=for-the-badge})
+![golang](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)  ![apache-2.0](https://img.shields.io/badge/Apache--2.0-green?style=for-the-badge)
 
 
 ### Sumamry ###
