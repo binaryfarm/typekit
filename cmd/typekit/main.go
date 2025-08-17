@@ -23,10 +23,9 @@ func usage() {
 	fmt.Print("OPTIONS:\n")
 	flag.PrintDefaults()
 }
-func init() {
-	flag.Parse()
-}
+
 func main() {
+	flag.Parse()
 	if len(flag.Args()) < 1 && flag.NFlag() < 1 {
 		usage()
 		return

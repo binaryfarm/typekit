@@ -84,7 +84,7 @@ func compileRegexp2(src string, multiline, dotAll, ignoreCase, unicode bool) (*r
 	}
 	regexp2Pattern, err1 := regexp2.Compile(src, opts)
 	if err1 != nil {
-		return nil, fmt.Errorf("Invalid regular expression (regexp2): %s (%v)", src, err1)
+		return nil, fmt.Errorf("invalid regular expression (regexp2): %s (%v)", src, err1)
 	}
 
 	return &regexp2Wrapper{rx: regexp2Pattern}, nil

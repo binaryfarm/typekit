@@ -31,7 +31,7 @@ func (r *Runtime) Repl(src string) (engine.Value, error) {
 }
 
 func (r *Runtime) Eval(src string) (engine.Value, error) {
-	record, e := engine.ParseModule("app", src, r.modules.Resolve)
+	record, e := engine.ParseModule("main", src, r.modules.Resolve)
 	if e != nil {
 		return nil, e
 	}

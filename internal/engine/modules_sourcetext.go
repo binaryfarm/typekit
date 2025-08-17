@@ -397,7 +397,6 @@ func ParseModule(name, sourceText string, resolveModule HostResolveImportedModul
 	// TODO asserts
 	opts = append(opts, parser.IsModule)
 	body, err := Parse(name, sourceText, opts...)
-	_ = body
 	if err != nil {
 		return nil, err
 	}

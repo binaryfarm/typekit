@@ -50,7 +50,7 @@ type unicodeStringBuilder struct {
 }
 
 var (
-	InvalidRuneError = errors.New("invalid rune")
+	ErrorInvalidRune = errors.New("invalid rune")
 )
 
 func (rr *utf16RuneReader) readChar() (c uint16, err error) {
@@ -124,9 +124,9 @@ func (rr *unicodeRuneReader) ReadRune() (r rune, size int, err error) {
 					return
 				}
 			}
-			err = InvalidRuneError
+			err = ErrorInvalidRune
 		} else if isUTF16SecondSurrogate(c) {
-			err = InvalidRuneError
+			err = ErrorInvalidRune
 		}
 		r = rune(c)
 	} else {

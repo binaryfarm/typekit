@@ -32,8 +32,8 @@ func fileExists(path string) bool {
 func searchForPackage(specifier, version string) string {
 	home, _ := os.UserHomeDir()
 	v := semver.Build(version)
-	retpath := ""
 	base := filepath.Join(home, tk_module_home, specifier)
+	retpath := base
 	e := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -66,7 +66,8 @@ func searchForPackage(specifier, version string) string {
 		return nil
 	})
 	if e != nil {
-		return ""
+		// default node modules path...
+		return fmt.Sprintf("./node_modules/%s/package.json", specifier)
 	}
 	return retpath
 }

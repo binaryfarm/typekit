@@ -31,6 +31,7 @@ func (c *Compiler) Build(entry string, buildPath string) error {
 	options := esbuild.BuildOptions{
 		EntryPoints: []string{entry},
 		Outdir:      buildPath,
+		Packages:    esbuild.PackagesExternal,
 	}
 
 	c.Result = esbuild.Build(options)
