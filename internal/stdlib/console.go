@@ -3,6 +3,7 @@ package stdlib
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 var counters map[string]uint64 = make(map[string]uint64)
@@ -31,9 +32,9 @@ func (c *Console) Count(args ...any) {
 	} else {
 		count = v + 1
 		counters[label] = count
-
 	}
-	fmt.Printf(fmt.Sprintf("%s%s", group_prefix(), "%s: %d\n"), label, count)
+	prefix := group_prefix()
+	fmt.Printf(prefix+"%s: %d\n", label, count)
 }
 
 func (c *Console) CountReset(args ...any) {
@@ -42,11 +43,20 @@ func (c *Console) CountReset(args ...any) {
 		label = args[0].(string)
 	}
 	counters[label] = 0
-	fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), "%s: %d"), label, 0)
+	prefix := group_prefix()
+	fmt.Printf(prefix+"%s: %d\n", label, 0)
 }
 
 func (c *Console) Debug(msg string, args ...any) {
-	fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), msg), args...)
+	prefix := group_prefix()
+	if len(args) > 0 && strings.Contains(msg, "%") {
+		fmt.Printf(prefix+msg+"\n", args...)
+	} else {
+		allArgs := make([]any, 0, len(args)+1)
+		allArgs = append(allArgs, prefix+msg)
+		allArgs = append(allArgs, args...)
+		fmt.Println(allArgs...)
+	}
 }
 
 type DirOptions struct {
@@ -56,28 +66,45 @@ type DirOptions struct {
 }
 
 func (c *Console) Dir(obj any, options *DirOptions) {
+	prefix := group_prefix()
 	if options == nil {
-		fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), "%o"), obj)
+		fmt.Printf(prefix+"%v\n", obj)
 	} else {
 		c.Dirxml(obj)
 	}
 }
+
 func (c *Console) Dirxml(obj any) {
 	data, e := json.MarshalIndent(obj, "", " ")
 	if e != nil {
-		panic(e)
+		prefix := group_prefix()
+		fmt.Printf(prefix+"Error serializing object: %v\n", e)
+		return
 	}
-	fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), "%s"), string(data))
+	prefix := group_prefix()
+	fmt.Print(prefix + string(data) + "\n")
 }
 
 func (c *Console) Error(args ...any) {
-	if msg, ok := args[0].(string); ok {
-		args = args[1:]
-		fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), msg), args...)
-	} else {
-
+	prefix := group_prefix()
+	if len(args) > 0 {
+		if msg, ok := args[0].(string); ok {
+			args = args[1:]
+			if len(args) > 0 && strings.Contains(msg, "%") {
+				fmt.Printf(prefix+msg+"\n", args...)
+			} else {
+				allArgs := make([]any, 0, len(args)+1)
+				allArgs = append(allArgs, prefix+msg)
+				allArgs = append(allArgs, args...)
+				fmt.Println(allArgs...)
+			}
+		} else {
+			allArgs := make([]any, 0, len(args)+1)
+			allArgs = append(allArgs, prefix)
+			allArgs = append(allArgs, args...)
+			fmt.Println(allArgs...)
+		}
 	}
-	fmt.Printf("%v\n", args...)
 }
 func group_prefix() string {
 	ret := ""
@@ -97,9 +124,14 @@ func (c *Console) GroupEnd() {
 }
 
 func (c *Console) Log(message string, a ...any) {
-	if len(a) > 0 {
-		fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), message), a...)
+	prefix := group_prefix()
+	if len(a) > 0 && strings.Contains(message, "%") {
+		format := prefix + message + "\n"
+		fmt.Printf(format, a...)
 	} else {
-		fmt.Printf(fmt.Sprintf("%s%s\n", group_prefix(), message), "")
+		args := make([]any, 0, len(a)+1)
+		args = append(args, prefix+message)
+		args = append(args, a...)
+		fmt.Println(args...)
 	}
 }

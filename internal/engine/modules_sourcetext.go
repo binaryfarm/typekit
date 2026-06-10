@@ -85,12 +85,13 @@ type SourceTextModuleRecord struct {
 	p    *Program
 	// context
 	// importmeta
-	hasTLA                bool
-	requestedModules      []string
-	importEntries         []importEntry
-	localExportEntries    []exportEntry
-	indirectExportEntries []exportEntry
-	starExportEntries     []exportEntry
+	hasTLA                  bool
+	requestedModules        []string
+	importEntries           []importEntry
+	localExportEntries      []exportEntry
+	indirectExportEntries   []exportEntry
+	starExportEntries       []exportEntry
+	namespaceExportEntries  []exportEntry
 
 	hostResolveImportedModule HostResolveImportedModuleFunc
 
@@ -243,12 +244,14 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 						exportName:    exportFromClause.Alias.String(),
 						importName:    "*",
 						moduleRequest: from.ModuleSpecifier.String(),
+						localName:     exportFromClause.Alias.String(),
 						offset:        int(exportDeclaration.Idx0()),
 					})
 				} else {
 					result = append(result, exportEntry{
 						exportName: exportFromClause.Alias.String(),
 						importName: "*",
+						localName:  exportFromClause.Alias.String(),
 						offset:     int(exportDeclaration.Idx0()),
 					})
 				}
@@ -418,6 +421,7 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 	var indirectExportEntries []exportEntry
 	var localExportEntries []exportEntry
 	var starExportEntries []exportEntry
+	var namespaceExportEntries []exportEntry
 	exportEntries := exportEntriesFromAst(body.ExportEntries)
 	for _, ee := range exportEntries {
 		if ee.moduleRequest == "" { // technically nil
@@ -438,6 +442,9 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 		} else {
 			if ee.importName == "*" && ee.exportName == "" {
 				starExportEntries = append(starExportEntries, ee)
+			} else if ee.importName == "*" && ee.exportName != "" {
+				// export * as ns from 'module' - creates a local export that resolves to the namespace
+				namespaceExportEntries = append(namespaceExportEntries, ee)
 			} else {
 				indirectExportEntries = append(indirectExportEntries, ee)
 			}
@@ -448,16 +455,17 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 		// realm isn't implement
 		// environment is undefined
 		// namespace is undefined
-		hasTLA:           body.HasTLA,
-		requestedModules: requestedModules,
+		hasTLA:                  body.HasTLA,
+		requestedModules:        requestedModules,
 		// hostDefined TODO
 		body: body,
 		// Context empty
 		// importMeta empty
-		importEntries:         importEntries,
-		localExportEntries:    localExportEntries,
-		indirectExportEntries: indirectExportEntries,
-		starExportEntries:     starExportEntries,
+		importEntries:           importEntries,
+		localExportEntries:      localExportEntries,
+		indirectExportEntries:   indirectExportEntries,
+		starExportEntries:       starExportEntries,
+		namespaceExportEntries:  namespaceExportEntries,
 
 		hostResolveImportedModule: resolveModule,
 		once:                      &sync.Once{},
@@ -480,11 +488,14 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 }
 
 func (module *SourceTextModuleRecord) getExportedNamesWithotStars() []string {
-	exportedNames := make([]string, 0, len(module.localExportEntries)+len(module.indirectExportEntries))
+	exportedNames := make([]string, 0, len(module.localExportEntries)+len(module.indirectExportEntries)+len(module.namespaceExportEntries))
 	for _, e := range module.localExportEntries {
 		exportedNames = append(exportedNames, e.exportName)
 	}
 	for _, e := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
+	}
+	for _, e := range module.namespaceExportEntries {
 		exportedNames = append(exportedNames, e.exportName)
 	}
 	return exportedNames
@@ -504,6 +515,9 @@ func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), 
 		exportedNames = append(exportedNames, e.exportName)
 	}
 	for _, e := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
+	}
+	for _, e := range module.namespaceExportEntries {
 		exportedNames = append(exportedNames, e.exportName)
 	}
 	if len(module.starExportEntries) == 0 {
@@ -614,6 +628,17 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 	resolveset = append(resolveset, ResolveSetElement{Module: module, ExportName: exportName})
 	for _, e := range module.localExportEntries {
 		if exportName == e.exportName {
+			// Handle export * as ns from 'module'
+			if e.importName == "*" && e.moduleRequest != "" {
+				importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+				if err != nil {
+					panic(err)
+				}
+				return &ResolvedBinding{
+					Module:      importedModule,
+					BindingName: "*namespace*",
+				}, false
+			}
 			// ii. ii. Return ResolvedBinding Record { [[Module]]: module, [[BindingName]]: e.[[LocalName]] }.
 			return &ResolvedBinding{
 				Module:      module,
@@ -637,6 +662,33 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 			} else {
 				return importedModule.ResolveExport(e.importName, resolveset...)
 			}
+		}
+	}
+	// Handle namespace export entries (export * as ns from 'module')
+	for _, e := range module.namespaceExportEntries {
+		if exportName == e.exportName {
+			importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+			if err != nil {
+				panic(err)
+			}
+			return &ResolvedBinding{
+				Module:      importedModule,
+				BindingName: "*namespace*",
+			}, false
+		}
+	}
+	// Handle star exports (export * from 'module')
+	for _, e := range module.starExportEntries {
+		importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+		if err != nil {
+			panic(err)
+		}
+		resolution, ambiguous := importedModule.ResolveExport(exportName, resolveset...)
+		if ambiguous {
+			return nil, true
+		}
+		if resolution != nil {
+			return resolution, false
 		}
 	}
 	if exportName == "default" {

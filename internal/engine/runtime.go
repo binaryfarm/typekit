@@ -2842,6 +2842,14 @@ func (r *Runtime) getHash() *maphash.Hash {
 
 // called when the top level function returns normally (i.e. control is passed outside the Runtime).
 func (r *Runtime) leave() {
+	r.RunJobs()
+	r.jobQueue = nil
+	r.vm.stack = nil
+}
+
+// RunJobs runs all pending promise jobs in the job queue.
+// This can be used to wait for promise resolution in synchronous contexts.
+func (r *Runtime) RunJobs() {
 	var jobs []func()
 	for len(r.jobQueue) > 0 {
 		jobs, r.jobQueue = r.jobQueue, jobs[:0]
@@ -2849,8 +2857,6 @@ func (r *Runtime) leave() {
 			job()
 		}
 	}
-	r.jobQueue = nil
-	r.vm.stack = nil
 }
 
 // called when the top level function returns (i.e. control is passed outside the Runtime) but it was due to an interrupt

@@ -52,7 +52,9 @@ func (r *REPL) Run(in *os.File) error {
 			}
 			if v != nil {
 				if !engine.IsUndefined(v) {
-					fmt.Printf("%v\n", v)
+					fmt.Printf("VALUE: %v (type: %T)\n", v, v)
+				} else {
+					fmt.Printf("VALUE: undefined\n")
 				}
 			}
 		}

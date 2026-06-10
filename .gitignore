@@ -1,7 +1,11 @@
 .vscode
+.opencode
+.claude
+.codex
 .DS_Store
 
 *.log
+*.exe
 
 bin/
 dist/

@@ -3,13 +3,14 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/binaryfarm/typekit/internal/engine"
-	"golang.org/x/mod/semver"
 )
+
+const tkModuleHome = ".typekit/modules"
 
 type npmDist struct {
 	Shasum  string `json:"shasum"`
@@ -22,120 +23,142 @@ type nodePackage struct {
 }
 
 func fileExists(path string) bool {
-	if s, ok := os.Stat(path); ok != nil {
-		return false
-	} else {
-		return s != nil
-	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
-func searchForPackage(specifier, version string) string {
-	home, _ := os.UserHomeDir()
-	v := semver.Build(version)
-	base := filepath.Join(home, tk_module_home, specifier)
-	retpath := base
-	e := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			v2 := semver.Build(d.Name())
-			if semver.Compare(v2, v) > 0 {
-				v = v2
-			}
-			return nil
-		}
-		if d.Name() == "package.json" || d.Name() == "package" {
-			fmt.Printf("searching package.json at @%s\n", path)
-			js, e := os.ReadFile(path)
-			if e != nil {
-				return e
+func findPackageJSON(startDir, specifier string) (string, *nodePackage, error) {
+	dir := startDir
+	for {
+		p := filepath.Join(dir, "node_modules", specifier, "package.json")
+		if fileExists(p) {
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return "", nil, err
 			}
 			var pkg nodePackage
-			e = json.Unmarshal(js, &pkg)
-			if e != nil {
-				return e
+			if err := json.Unmarshal(data, &pkg); err != nil {
+				return "", nil, err
 			}
-			v2 := semver.Build(pkg.Version)
-			if semver.Compare(v2, v) > 0 {
-				v = v2
-				retpath = path
-				return nil
-			}
+			return p, &pkg, nil
 		}
-		return nil
-	})
-	if e != nil {
-		// default node modules path...
-		return fmt.Sprintf("./node_modules/%s/package.json", specifier)
-	}
-	return retpath
-}
-func resolveFsPackage(specifier string) (engine.ModuleRecord, error) {
-	var resolver func(referencingScriptOrModule interface{}, specifier string) (engine.ModuleRecord, error)
-	resolver = func(referencingScriptOrModule interface{}, specifier string) (engine.ModuleRecord, error) {
-		var p string
-		p = filepath.Join(".", specifier, "package.json")
-		if !fileExists(p) {
-			p = filepath.Join("node_modules", specifier, "package.json")
-			if !fileExists(p) {
-				p = searchForPackage(specifier, "0.0.0")
-			}
-		}
-		fmt.Printf("searching path %s\n", p)
-		pjson, e := os.ReadFile(p)
-		if e != nil {
-			return nil, e
-		}
-		var np nodePackage
-		e = json.Unmarshal(pjson, &np)
-		if e != nil {
-			return nil, e
-		}
-		index := filepath.Join("node_modules", specifier, np.Main)
-		ext := filepath.Ext(index)
-		if ext == "" {
-			index = fmt.Sprintf("%s.js", index)
-		}
-		indexjs, e := os.ReadFile(index)
-		if e != nil {
-			return nil, e
-		}
-		return engine.ParseModule(specifier, string(indexjs), resolver)
 
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	home, _ := os.UserHomeDir()
+	globalPath := filepath.Join(home, tkModuleHome, specifier, "package.json")
+	if fileExists(globalPath) {
+		data, err := os.ReadFile(globalPath)
+		if err != nil {
+			return "", nil, err
+		}
+		var pkg nodePackage
+		if err := json.Unmarshal(data, &pkg); err != nil {
+			return "", nil, err
+		}
+		return globalPath, &pkg, nil
+	}
+
+	return "", nil, fmt.Errorf("package %s not found", specifier)
+}
+
+func resolvePackage(specifier, referrerDir string, resolveFn engine.HostResolveImportedModuleFunc) (engine.ModuleRecord, error) {
+	pkgPath, pkg, err := findPackageJSON(referrerDir, specifier)
+	if err != nil {
+		return nil, err
+	}
+
+	pkgDir := filepath.Dir(pkgPath)
+	mainFile := pkg.Main
+	if mainFile == "" {
+		mainFile = "index.js"
+	}
+
+	indexPath := filepath.Join(pkgDir, mainFile)
+	ext := filepath.Ext(indexPath)
+	if ext == "" {
+		indexPath += ".js"
+	}
+
+	if !fileExists(indexPath) {
+		if ext == "" {
+			indexPath = strings.TrimSuffix(indexPath, ".js") + ".ts"
+		}
+		if !fileExists(indexPath) {
+			return nil, fmt.Errorf("main file not found for package %s", specifier)
+		}
+	}
+
+	sourceText, err := os.ReadFile(indexPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return engine.ParseModule(specifier, string(sourceText), resolveFn)
+}
+
+func resolveFsPackage(specifier string) (engine.ModuleRecord, error) {
+	var resolver engine.HostResolveImportedModuleFunc
+	resolver = func(referencingScriptOrModule interface{}, spec string) (engine.ModuleRecord, error) {
+		if strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../") {
+			baseDir := "."
+			if referencingScriptOrModule != nil {
+				if _, ok := referencingScriptOrModule.(engine.ModuleRecord); ok {
+					// baseDir should be tracked by TypeKitResolver.baseDirs
+					// but we can't access it here, so fallback to "."
+				}
+			}
+			resolvedPath := filepath.Join(baseDir, spec)
+			resolvedPath = filepath.Clean(resolvedPath)
+			ext := filepath.Ext(resolvedPath)
+			if ext == "" {
+				if fileExists(resolvedPath + ".js") {
+					resolvedPath += ".js"
+				} else if fileExists(resolvedPath + ".ts") {
+					resolvedPath += ".ts"
+				} else if fileExists(filepath.Join(resolvedPath, "index.js")) {
+					resolvedPath = filepath.Join(resolvedPath, "index.js")
+				} else if fileExists(filepath.Join(resolvedPath, "index.ts")) {
+					resolvedPath = filepath.Join(resolvedPath, "index.ts")
+				}
+			}
+
+			sourceText, err := os.ReadFile(resolvedPath)
+			if err != nil {
+				return nil, err
+			}
+			return engine.ParseModule(spec, string(sourceText), resolver)
+		}
+		return resolvePackage(spec, ".", resolver)
 	}
 	return resolver(nil, specifier)
 }
 
 func resolveTkPackage(specifier string) (engine.ModuleRecord, error) {
-	return nil, fmt.Errorf("not implemented")
+	name := strings.TrimPrefix(specifier, "typekit:")
+
+	builtins := map[string]string{
+		"console": `export const log = (...args: any[]) => { console.log(...args); };`,
+		"fs":      `export const readFile = (path: string) => { return typekit.fs.readFile(path); };`,
+		"fetch":   `export const fetch = (url: string, opts?: any) => { return typekit.fetch.fetch(url, opts); };`,
+	}
+
+	if src, ok := builtins[name]; ok {
+		return engine.ParseModule(specifier, src, func(referencingScriptOrModule interface{}, s string) (engine.ModuleRecord, error) {
+			return nil, fmt.Errorf("builtin module %s cannot import %s", name, s)
+		})
+	}
+	return nil, fmt.Errorf("unknown typekit module: %s", name)
 }
 
 func resolveNodePackage(specifier string) (engine.ModuleRecord, error) {
-	var resolver func(referencingScriptOrModule interface{}, specifier string) (engine.ModuleRecord, error)
-	resolver = func(referencingScriptOrModule interface{}, specifier string) (engine.ModuleRecord, error) {
-		p := filepath.Join(".", specifier, "package.json")
-		fmt.Printf("searching for package.json ./%s\n", p)
-		pjson, e := os.ReadFile(p)
-		if e != nil {
-			return nil, e
-		}
-		var np nodePackage
-		e = json.Unmarshal(pjson, &np)
-		if e != nil {
-			return nil, e
-		}
-		index := filepath.Join("node_modules", specifier, np.Main)
-		ext := filepath.Ext(index)
-		if ext == "" {
-			index = fmt.Sprintf("%s.js", index)
-		}
-		indexjs, e := os.ReadFile(index)
-		if e != nil {
-			return nil, e
-		}
-		return engine.ParseModule(specifier, string(indexjs), resolver)
-
-	}
-	return resolver(nil, specifier)
+	name := strings.TrimPrefix(specifier, "node:")
+	return resolvePackage(name, ".", func(referencingScriptOrModule interface{}, spec string) (engine.ModuleRecord, error) {
+		return resolveNodePackage("node:" + spec)
+	})
 }

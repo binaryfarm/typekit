@@ -43,8 +43,9 @@ func (r *Runtime) createNamespaceObject(m ModuleRecord) *namespaceObject {
 			if ambiguous || v == nil {
 				continue
 			}
-			no.exports[unistring.NewFromString(exportName)] = struct{}{}
-			no.exportsNames = append(no.exportsNames, unistring.NewFromString(exportName))
+			key := unistring.NewFromString(exportName)
+			no.exports[key] = struct{}{}
+			no.exportsNames = append(no.exportsNames, key)
 		}
 	})
 	return no

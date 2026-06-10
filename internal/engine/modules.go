@@ -2,7 +2,6 @@ package engine
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 )
 
@@ -262,7 +261,6 @@ func (r *Runtime) innerModuleEvaluation(
 				}
 			} else {
 				requiredC = state.cycleRoot[requiredC]
-				fmt.Printf("requiredC %v", requiredC)
 				// check stuff
 			}
 			if state.asyncEvaluation[requiredC] != 0 {

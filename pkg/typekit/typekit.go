@@ -2,7 +2,9 @@ package typekit
 
 import (
 	_ "embed"
-	"path"
+	"fmt"
+	"os"
+	"runtime/debug"
 
 	"github.com/binaryfarm/typekit/internal/compiler"
 	"github.com/binaryfarm/typekit/internal/repl"
@@ -18,12 +20,6 @@ type Options struct {
 	EntryPoint string
 }
 
-func handleError(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func NewApp(options Options) *App {
 	runtime := runtime.NewRuntime()
 	return &App{
@@ -36,22 +32,31 @@ func NewREPL() *repl.REPL {
 	return repl.NewREPL()
 }
 
-func (a *App) Run() error {
-	c := compiler.NewCompiler()
-	e := c.Build(a.options.EntryPoint, "")
-	if e != nil {
-		return e
-	}
-	for _, f := range c.Result.OutputFiles {
-		ext := path.Ext(f.Path)
-		if f.Path == "<stdout>" || ext == ".js" || ext == ".ts" {
-			_, e := a.runtime.Eval(string(f.Contents))
-			if e != nil {
-				return e
-			}
+func (a *App) Run() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic recovered: %v\n%s", r, debug.Stack())
 		}
+	}()
+
+	c := compiler.NewCompiler()
+	js, e := c.Compile(readEntryPoint(a.options.EntryPoint))
+	if e != nil {
+		return fmt.Errorf("build failed: %w", e)
+	}
+	_, e = a.runtime.Eval(js)
+	if e != nil {
+		return fmt.Errorf("runtime error: %w", e)
 	}
 	return nil
+}
+
+func readEntryPoint(entry string) string {
+	content, err := os.ReadFile(entry)
+	if err != nil {
+		return ""
+	}
+	return string(content)
 }
 func (a *App) Destroy() error {
 	return a.runtime.Close()

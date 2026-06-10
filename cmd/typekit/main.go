@@ -39,7 +39,6 @@ func main() {
 		}
 	}
 	args := flag.Args()
-	fmt.Printf("%v", args)
 	entryPoint := args[len(args)-1]
 
 	// repl power
@@ -61,9 +60,9 @@ func main() {
 		Watch:      *Watch,
 		EntryPoint: entryPoint,
 	})
+	defer app.Destroy()
 	e := app.Run()
 	if e != nil {
 		fmt.Println(e.Error())
 	}
-	defer app.Destroy()
 }

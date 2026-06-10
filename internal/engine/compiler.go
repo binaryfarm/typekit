@@ -1020,6 +1020,9 @@ func (c *compiler) compileModule(module *SourceTextModuleRecord) {
 	for _, entry := range module.indirectExportEntries {
 		c.compileIndirectExportEntry(entry)
 	}
+	for _, entry := range module.namespaceExportEntries {
+		c.compileNamespaceExportEntry(entry)
+	}
 
 	c.compileFunctions(funcs)
 
@@ -1085,7 +1088,7 @@ func (c *compiler) compileLocalExportEntry(entry exportEntry) {
 	b.inStash = true
 	b.markAccessPoint()
 
-	exportName := unistring.NewFromString(entry.localName)
+	exportName := unistring.NewFromString(entry.exportName)
 	module := c.module
 	callback := func(vm *vm, getter func() Value) {
 		vm.r.modules[module].(*SourceTextModuleInstance).exportGetters[exportName.String()] = getter
@@ -1119,6 +1122,42 @@ func (c *compiler) compileIndirectExportEntry(entry exportEntry) {
 		m := vm.r.modules[module]
 		m.(*SourceTextModuleInstance).exportGetters[exportName] = func() Value {
 			return vm.r.modules[b.Module].GetBindingValue(importName)
+		}
+	}})
+}
+
+func (c *compiler) compileNamespaceExportEntry(entry exportEntry) {
+	otherModule, err := c.hostResolveImportedModule(c.module, entry.moduleRequest)
+	if err != nil {
+		panic(fmt.Errorf("previously resolved module returned error %w", err))
+	}
+	
+	exportName := unistring.NewFromString(entry.exportName).String()
+	localName := unistring.NewFromString(entry.localName)
+	module := c.module
+	
+	// Create local binding for the namespace
+	b, _ := c.scope.bindName(localName)
+	b.inStash = true
+	b.isConst = true
+	
+	// Emit importNamespace to initialize the local binding
+	idx := file.Idx(entry.offset)
+	c.emitLexicalAssign(
+		localName,
+		int(idx),
+		c.compileEmitterExpr(func() {
+			c.emit(importNamespace{
+				module: otherModule,
+			})
+		}, idx),
+	)
+	
+	// Also set up the export getter
+	c.emit(exportIndirect{callback: func(vm *vm) {
+		m := vm.r.modules[module]
+		m.(*SourceTextModuleInstance).exportGetters[exportName] = func() Value {
+			return vm.r.NamespaceObjectFor(otherModule)
 		}
 	}})
 }
